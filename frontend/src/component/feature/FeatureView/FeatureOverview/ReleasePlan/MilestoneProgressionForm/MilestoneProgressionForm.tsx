@@ -1,13 +1,10 @@
-import { useState } from 'react';
 import { Button, styled } from '@mui/material';
 import BoltIcon from '@mui/icons-material/Bolt';
 import { useMilestoneProgressionForm } from '../hooks/useMilestoneProgressionForm.js';
-import { useMilestoneProgressionsApi } from 'hooks/api/actions/useMilestoneProgressionsApi/useMilestoneProgressionsApi';
-import useToast from 'hooks/useToast';
-import { formatUnknownError } from 'utils/formatUnknownError';
 import { MilestoneProgressionTimeInput } from './MilestoneProgressionTimeInput.tsx';
-import { useChangeRequestsEnabled } from 'hooks/useChangeRequestsEnabled';
-import type { CreateMilestoneProgressionSchema } from 'openapi';
+import type { ChangeMilestoneProgressionSchema } from 'openapi';
+import type { MilestoneStatus } from '../ReleasePlanMilestone/ReleasePlanMilestoneStatus.tsx';
+import { useMilestoneProgressionInfo } from '../hooks/useMilestoneProgressionInfo.ts';
 
 const StyledFormContainer = styled('div')(({ theme }) => ({
     display: 'flex',
@@ -15,6 +12,7 @@ const StyledFormContainer = styled('div')(({ theme }) => ({
     gap: theme.spacing(1.5),
     padding: theme.spacing(1.5, 2),
     backgroundColor: theme.palette.background.elevation1,
+    border: `1px solid ${theme.palette.divider}`,
     width: '100%',
     borderRadius: `${theme.shape.borderRadiusLarge}px`,
     position: 'relative',
@@ -54,80 +52,55 @@ const StyledButtonGroup = styled('div')(({ theme }) => ({
 const StyledErrorMessage = styled('span')(({ theme }) => ({
     color: theme.palette.error.main,
     fontSize: theme.typography.body2.fontSize,
-    marginRight: 'auto',
+    paddingLeft: theme.spacing(3.25),
+}));
+
+const StyledInfoLine = styled('span')(({ theme }) => ({
+    color: theme.palette.text.secondary,
+    fontSize: theme.typography.caption.fontSize,
+    paddingLeft: theme.spacing(3.25),
+    fontStyle: 'italic',
 }));
 
 interface IMilestoneProgressionFormProps {
     sourceMilestoneId: string;
     targetMilestoneId: string;
-    projectId: string;
-    environment: string;
-    featureName: string;
-    onSave: () => void;
+    sourceMilestoneStartedAt?: string | null;
+    status?: MilestoneStatus;
+    onSubmit: (
+        payload: ChangeMilestoneProgressionSchema,
+    ) => Promise<{ shouldReset?: boolean }>;
     onCancel: () => void;
-    onChangeRequestSubmit?: (
-        progressionPayload: CreateMilestoneProgressionSchema,
-    ) => void;
 }
 
 export const MilestoneProgressionForm = ({
     sourceMilestoneId,
     targetMilestoneId,
-    projectId,
-    environment,
-    featureName,
-    onSave,
+    sourceMilestoneStartedAt,
+    status,
+    onSubmit,
     onCancel,
-    onChangeRequestSubmit,
 }: IMilestoneProgressionFormProps) => {
     const form = useMilestoneProgressionForm(
         sourceMilestoneId,
         targetMilestoneId,
+        {},
+        sourceMilestoneStartedAt,
+        status,
     );
-    const { createMilestoneProgression } = useMilestoneProgressionsApi();
-    const { setToastData, setToastApiError } = useToast();
-    const { isChangeRequestConfigured } = useChangeRequestsEnabled(projectId);
 
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const handleChangeRequestSubmit = () => {
-        const progressionPayload = form.getProgressionPayload();
-        onChangeRequestSubmit?.(progressionPayload);
-    };
-
-    const handleDirectSubmit = async () => {
-        setIsSubmitting(true);
-        try {
-            await createMilestoneProgression(
-                projectId,
-                environment,
-                featureName,
-                form.getProgressionPayload(),
-            );
-            setToastData({
-                type: 'success',
-                text: 'Automation configured successfully',
-            });
-            onSave();
-        } catch (error: unknown) {
-            setToastApiError(formatUnknownError(error));
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+    const progressionInfo = useMilestoneProgressionInfo(
+        form.getIntervalMinutes(),
+        sourceMilestoneStartedAt,
+        status,
+    );
 
     const handleSubmit = async () => {
-        if (isSubmitting) return;
-
         if (!form.validate()) {
             return;
         }
 
-        if (isChangeRequestConfigured(environment) && onChangeRequestSubmit) {
-            handleChangeRequestSubmit();
-        } else {
-            await handleDirectSubmit();
-        }
+        await onSubmit(form.getProgressionPayload());
     };
 
     const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -144,25 +117,23 @@ export const MilestoneProgressionForm = ({
         <StyledFormContainer onKeyDown={handleKeyDown}>
             <StyledTopRow>
                 <StyledIcon />
-                <StyledLabel>Proceed to the next milestone after</StyledLabel>
+                <StyledLabel>Proceed after</StyledLabel>
                 <MilestoneProgressionTimeInput
                     timeValue={form.timeValue}
                     timeUnit={form.timeUnit}
                     onTimeValueChange={form.handleTimeValueChange}
                     onTimeUnitChange={form.handleTimeUnitChange}
-                    disabled={isSubmitting}
                 />
+                <StyledLabel>from milestone start</StyledLabel>
             </StyledTopRow>
+            {progressionInfo && (
+                <StyledInfoLine>{progressionInfo}</StyledInfoLine>
+            )}
+            {form.errors.time && (
+                <StyledErrorMessage>{form.errors.time}</StyledErrorMessage>
+            )}
             <StyledButtonGroup>
-                {form.errors.time && (
-                    <StyledErrorMessage>{form.errors.time}</StyledErrorMessage>
-                )}
-                <Button
-                    variant='outlined'
-                    onClick={onCancel}
-                    size='small'
-                    disabled={isSubmitting}
-                >
+                <Button variant='outlined' onClick={onCancel} size='small'>
                     Cancel
                 </Button>
                 <Button
@@ -170,9 +141,8 @@ export const MilestoneProgressionForm = ({
                     color='primary'
                     onClick={handleSubmit}
                     size='small'
-                    disabled={isSubmitting}
                 >
-                    {isSubmitting ? 'Saving...' : 'Save'}
+                    Save
                 </Button>
             </StyledButtonGroup>
         </StyledFormContainer>

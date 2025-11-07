@@ -39,13 +39,13 @@ export type IFlagKey =
     | 'extendedMetrics'
     | 'removeUnsafeInlineStyleSrc'
     | 'projectRoleAssignment'
-    | 'originMiddlewareRequestLogging'
     | 'webhookDomainLogging'
     | 'productivityReportEmail'
     | 'productivityReportUnsubscribers'
     | 'showUserDeviceCount'
     | 'memorizeStats'
     | 'streaming'
+    | 'denyStreamingForNonEdge'
     | 'deltaApi'
     | 'uniqueSdkTracking'
     | 'consumptionModel'
@@ -57,13 +57,12 @@ export type IFlagKey =
     | 'etagByEnv'
     | 'fetchMode'
     | 'optimizeLifecycle'
-    | 'newStrategyModal'
     | 'globalChangeRequestList'
-    | 'newUiConfigService'
     | 'trafficBillingDisplay'
     | 'milestoneProgression'
-    | 'envAddStrategySuggestion'
-    | 'featureReleasePlans';
+    | 'featureReleasePlans'
+    | 'plausibleMetrics'
+    | 'safeguards';
 
 export type IFlags = Partial<{ [key in IFlagKey]: boolean | Variant }>;
 
@@ -202,10 +201,6 @@ const flags: IFlags = {
         process.env.UNLEASH_EXPERIMENTAL_PROJECT_ROLE_ASSIGNMENT,
         false,
     ),
-    originMiddlewareRequestLogging: parseEnvVarBoolean(
-        process.env.UNLEASH_ORIGIN_MIDDLEWARE_REQUEST_LOGGING,
-        false,
-    ),
     webhookDomainLogging: parseEnvVarBoolean(
         process.env.UNLEASH_EXPERIMENT_WEBHOOK_DOMAIN_LOGGING,
         false,
@@ -257,6 +252,10 @@ const flags: IFlags = {
             false,
         ),
     },
+    denyStreamingForNonEdge: parseEnvVarBoolean(
+        process.env.UNLEASH_EXPERIMENTAL_STREAMING_DENY_STREAMING_FOR_NON_EDGE,
+        false,
+    ),
     fetchMode: {
         name: 'disabled',
         enabled: parseEnvVarBoolean(
@@ -264,16 +263,8 @@ const flags: IFlags = {
             false,
         ),
     },
-    newStrategyModal: parseEnvVarBoolean(
-        process.env.UNLEASH_EXPERIMENTAL_NEW_STRATEGY_MODAL,
-        false,
-    ),
     globalChangeRequestList: parseEnvVarBoolean(
         process.env.UNLEASH_EXPERIMENTAL_GLOBAL_CHANGE_REQUEST_LIST,
-        false,
-    ),
-    newUiConfigService: parseEnvVarBoolean(
-        process.env.UNLEASH_EXPERIMENTAL_NEW_UI_CONFIG_SERVICE,
         false,
     ),
     trafficBillingDisplay: parseEnvVarBoolean(
@@ -284,12 +275,16 @@ const flags: IFlags = {
         process.env.UNLEASH_EXPERIMENTAL_MILESTONE_PROGRESSION,
         false,
     ),
-    envAddStrategySuggestion: parseEnvVarBoolean(
-        process.env.UNLEASH_EXPERIMENTAL_ENV_ADD_STRATEGY_SUGGESTION,
-        false,
-    ),
     featureReleasePlans: parseEnvVarBoolean(
         process.env.UNLEASH_EXPERIMENTAL_FEATURE_RELEASE_PLANS,
+        false,
+    ),
+    plausibleMetrics: parseEnvVarBoolean(
+        process.env.UNLEASH_EXPERIMENTAL_PLAUSIBLE_METRICS,
+        false,
+    ),
+    safeguards: parseEnvVarBoolean(
+        process.env.UNLEASH_EXPERIMENTAL_SAFEGUARDS,
         false,
     ),
 };

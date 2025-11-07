@@ -85,13 +85,13 @@ export type UiFlags = {
     edgeObservability?: boolean;
     customMetrics?: boolean;
     impactMetrics?: boolean;
+    plausibleMetrics?: boolean;
     lifecycleGraphs?: boolean;
-    newStrategyModal?: boolean;
     globalChangeRequestList?: boolean;
     trafficBillingDisplay?: boolean;
     milestoneProgression?: boolean;
     featureReleasePlans?: boolean;
-    envAddStrategySuggestion?: boolean;
+    safeguards?: boolean;
 };
 
 export interface IVersionInfo {

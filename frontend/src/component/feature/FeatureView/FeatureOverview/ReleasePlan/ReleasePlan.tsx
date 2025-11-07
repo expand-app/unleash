@@ -13,22 +13,21 @@ import type {
 import { useState } from 'react';
 import { formatUnknownError } from 'utils/formatUnknownError';
 import { ReleasePlanRemoveDialog } from './ReleasePlanRemoveDialog.tsx';
-import { ReleasePlanMilestone } from './ReleasePlanMilestone/ReleasePlanMilestone.tsx';
-import { ConditionallyRender } from 'component/common/ConditionallyRender/ConditionallyRender';
 import { useChangeRequestsEnabled } from 'hooks/useChangeRequestsEnabled';
 import { useChangeRequestApi } from 'hooks/api/actions/useChangeRequestApi/useChangeRequestApi';
 import { usePendingChangeRequests } from 'hooks/api/getters/usePendingChangeRequests/usePendingChangeRequests';
 import { ReleasePlanChangeRequestDialog } from './ChangeRequest/ReleasePlanChangeRequestDialog.tsx';
+import type {
+    IChangeRequestChangeMilestoneProgression,
+    IChangeRequestDeleteMilestoneProgression,
+} from 'component/changeRequest/changeRequest.types';
 import { usePlausibleTracker } from 'hooks/usePlausibleTracker';
 import { Truncator } from 'component/common/Truncator/Truncator';
 import { useUiFlag } from 'hooks/useUiFlag';
-import { MilestoneProgressionForm } from './MilestoneProgressionForm/MilestoneProgressionForm.tsx';
 import { useMilestoneProgressionsApi } from 'hooks/api/actions/useMilestoneProgressionsApi/useMilestoneProgressionsApi';
 import { DeleteProgressionDialog } from './DeleteProgressionDialog.tsx';
-import type {
-    CreateMilestoneProgressionSchema,
-    UpdateMilestoneProgressionSchema,
-} from 'openapi';
+import type { ChangeMilestoneProgressionSchema } from 'openapi';
+import { ReleasePlanMilestoneItem } from './ReleasePlanMilestoneItem/ReleasePlanMilestoneItem.tsx';
 
 const StyledContainer = styled('div')(({ theme }) => ({
     padding: theme.spacing(2),
@@ -75,17 +74,6 @@ const StyledBody = styled('div')(({ theme }) => ({
     flexDirection: 'column',
 }));
 
-const StyledConnection = styled('div', {
-    shouldForwardProp: (prop) => prop !== 'isCompleted',
-})<{ isCompleted: boolean }>(({ theme, isCompleted }) => ({
-    width: 2,
-    height: theme.spacing(2),
-    backgroundColor: isCompleted
-        ? theme.palette.divider
-        : theme.palette.primary.main,
-    marginLeft: theme.spacing(3.25),
-}));
-
 interface IReleasePlanProps {
     plan: IReleasePlan;
     environmentIsDisabled?: boolean;
@@ -124,13 +112,8 @@ export const ReleasePlan = ({
         | { type: 'removeReleasePlan'; environmentActive: boolean }
         | { type: 'startMilestone'; milestone: IReleasePlanMilestone }
         | {
-              type: 'createMilestoneProgression';
-              payload: CreateMilestoneProgressionSchema;
-          }
-        | {
-              type: 'updateMilestoneProgression';
-              sourceMilestoneId: string;
-              payload: UpdateMilestoneProgressionSchema;
+              type: 'changeMilestoneProgression';
+              payload: ChangeMilestoneProgressionSchema;
           }
         | {
               type: 'deleteMilestoneProgression';
@@ -140,8 +123,45 @@ export const ReleasePlan = ({
     >(null);
     const { isChangeRequestConfigured } = useChangeRequestsEnabled(projectId);
     const { addChange } = useChangeRequestApi();
-    const { refetch: refetchChangeRequests } =
+    const { data: pendingChangeRequests, refetch: refetchChangeRequests } =
         usePendingChangeRequests(projectId);
+
+    // Find progression changes for this feature in pending change requests
+    const getPendingProgressionChange = (sourceMilestoneId: string) => {
+        if (!pendingChangeRequests) return null;
+
+        for (const changeRequest of pendingChangeRequests) {
+            if (changeRequest.environment !== environment) continue;
+
+            const featureInChangeRequest = changeRequest.features.find(
+                (featureItem) => featureItem.name === featureName,
+            );
+            if (!featureInChangeRequest) continue;
+
+            // Look for change or delete progression changes
+            const progressionChange = featureInChangeRequest.changes.find(
+                (
+                    change,
+                ): change is
+                    | IChangeRequestChangeMilestoneProgression
+                    | IChangeRequestDeleteMilestoneProgression =>
+                    (change.action === 'changeMilestoneProgression' &&
+                        change.payload.sourceMilestone === sourceMilestoneId) ||
+                    (change.action === 'deleteMilestoneProgression' &&
+                        change.payload.sourceMilestone === sourceMilestoneId),
+            );
+
+            if (progressionChange) {
+                return {
+                    action: progressionChange.action,
+                    payload: progressionChange.payload,
+                    changeRequestId: changeRequest.id,
+                };
+            }
+        }
+
+        return null;
+    };
     const milestoneProgressionsEnabled = useUiFlag('milestoneProgression');
     const [progressionFormOpenIndex, setProgressionFormOpenIndex] = useState<
         number | null
@@ -175,23 +195,11 @@ export const ReleasePlan = ({
                 });
                 break;
 
-            case 'createMilestoneProgression':
+            case 'changeMilestoneProgression':
                 await addChange(projectId, environment, {
                     feature: featureName,
-                    action: 'createMilestoneProgression',
+                    action: 'changeMilestoneProgression',
                     payload: changeRequestAction.payload,
-                });
-                setProgressionFormOpenIndex(null);
-                break;
-
-            case 'updateMilestoneProgression':
-                await addChange(projectId, environment, {
-                    feature: featureName,
-                    action: 'updateMilestoneProgression',
-                    payload: {
-                        sourceMilestone: changeRequestAction.sourceMilestoneId,
-                        ...changeRequestAction.payload,
-                    },
                 });
                 break;
 
@@ -214,6 +222,7 @@ export const ReleasePlan = ({
         });
 
         setChangeRequestAction(null);
+        setProgressionFormOpenIndex(null);
     };
 
     const confirmRemoveReleasePlan = () => {
@@ -288,33 +297,11 @@ export const ReleasePlan = ({
         });
     };
 
-    const handleProgressionSave = async () => {
-        setProgressionFormOpenIndex(null);
-        await refetch();
-    };
-
-    const handleProgressionCancel = () => {
-        setProgressionFormOpenIndex(null);
-    };
-
-    const handleProgressionChangeRequestSubmit = (
-        payload: CreateMilestoneProgressionSchema,
-    ) => {
-        setChangeRequestAction({
-            type: 'createMilestoneProgression',
-            payload,
-        });
-    };
-
-    const handleUpdateProgressionChangeRequestSubmit = (
-        sourceMilestoneId: string,
-        payload: UpdateMilestoneProgressionSchema,
-    ) => {
-        setChangeRequestAction({
-            type: 'updateMilestoneProgression',
-            sourceMilestoneId,
-            payload,
-        });
+    const handleAddToChangeRequest = (action: {
+        type: 'changeMilestoneProgression';
+        payload: ChangeMilestoneProgressionSchema;
+    }) => {
+        setChangeRequestAction(action);
     };
 
     const handleDeleteProgression = (milestone: IReleasePlanMilestone) => {
@@ -392,80 +379,35 @@ export const ReleasePlan = ({
                 )}
             </StyledHeader>
             <StyledBody>
-                {milestones.map((milestone, index) => {
-                    const isNotLastMilestone = index < milestones.length - 1;
-                    const isProgressionFormOpen =
-                        progressionFormOpenIndex === index;
-                    const nextMilestoneId = milestones[index + 1]?.id || '';
-                    const handleOpenProgressionForm = () =>
-                        setProgressionFormOpenIndex(index);
-
-                    return (
-                        <div key={milestone.id}>
-                            <ReleasePlanMilestone
-                                readonly={readonly}
-                                milestone={milestone}
-                                status={
-                                    milestone.id === activeMilestoneId
-                                        ? environmentIsDisabled
-                                            ? 'paused'
-                                            : 'active'
-                                        : index < activeIndex
-                                          ? 'completed'
-                                          : 'not-started'
-                                }
-                                onStartMilestone={onStartMilestone}
-                                showAutomation={
-                                    milestoneProgressionsEnabled &&
-                                    isNotLastMilestone &&
-                                    !readonly
-                                }
-                                onAddAutomation={handleOpenProgressionForm}
-                                onDeleteAutomation={
-                                    milestone.transitionCondition
-                                        ? () =>
-                                              handleDeleteProgression(milestone)
-                                        : undefined
-                                }
-                                automationForm={
-                                    isProgressionFormOpen ? (
-                                        <MilestoneProgressionForm
-                                            sourceMilestoneId={milestone.id}
-                                            targetMilestoneId={nextMilestoneId}
-                                            projectId={projectId}
-                                            environment={environment}
-                                            featureName={featureName}
-                                            onSave={handleProgressionSave}
-                                            onCancel={handleProgressionCancel}
-                                            onChangeRequestSubmit={(payload) =>
-                                                handleProgressionChangeRequestSubmit(
-                                                    payload,
-                                                )
-                                            }
-                                        />
-                                    ) : undefined
-                                }
-                                projectId={projectId}
-                                environment={environment}
-                                featureName={featureName}
-                                onUpdate={refetch}
-                                onUpdateChangeRequestSubmit={
-                                    handleUpdateProgressionChangeRequestSubmit
-                                }
-                                allMilestones={milestones}
-                                activeMilestoneId={activeMilestoneId}
-                            />
-                            <ConditionallyRender
-                                condition={isNotLastMilestone}
-                                show={
-                                    <StyledConnection
-                                        isCompleted={index < activeIndex}
-                                    />
-                                }
-                            />
-                        </div>
-                    );
-                })}
+                {milestones.map((milestone, index) => (
+                    <ReleasePlanMilestoneItem
+                        key={milestone.id}
+                        milestone={milestone}
+                        index={index}
+                        milestones={milestones}
+                        activeMilestoneId={activeMilestoneId}
+                        activeIndex={activeIndex}
+                        environmentIsDisabled={environmentIsDisabled}
+                        readonly={readonly}
+                        milestoneProgressionsEnabled={
+                            milestoneProgressionsEnabled
+                        }
+                        progressionFormOpenIndex={progressionFormOpenIndex}
+                        onSetProgressionFormOpenIndex={
+                            setProgressionFormOpenIndex
+                        }
+                        onStartMilestone={onStartMilestone}
+                        onDeleteProgression={handleDeleteProgression}
+                        onAddToChangeRequest={handleAddToChangeRequest}
+                        getPendingProgressionChange={
+                            getPendingProgressionChange
+                        }
+                        projectId={projectId}
+                        environment={environment}
+                        featureName={featureName}
+                        onUpdate={refetch}
+                    />
+                ))}
             </StyledBody>
             <ReleasePlanRemoveDialog
                 plan={plan}
